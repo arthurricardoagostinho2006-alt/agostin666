@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agostin666 | Player Profile</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="container">
+
+        <header>
+            <h1>PLAYER PROFILE</h1>
+            <span>SEASON 1</span>
+        </header>
+
+        <section class="profile">
+
+            <div class="avatar">
+                <img id="avatar" src="https://placehold.co/180x180/222/fff?text=AG" alt="Avatar">
+
+                <label for="photoInput">ALTERAR FOTO</label>
+                <input type="file" id="photoInput" accept="image/*" hidden>
+
+                <div class="rank-emblem-wrap">
+                    <div class="rank-emblem" id="rankEmblem">
+                        <span id="rankEmblemLevel">1</span>
+                    </div>
+                    <span class="emblem-caption">COMPETITIVE RANK</span>
+                </div>
+            </div>
+
+            <div class="identity">
+                <input id="nickname" value="agostin666" maxlength="20">
+                <h2 id="rank">RANK 1</h2>
+                <p><strong id="elo">20</strong> ELO</p>
+            </div>
+
+        </section>
+
+        <section class="progress">
+            <div class="progress-info">
+                <span>PROGRESSO PARA O PRÓXIMO NÍVEL</span>
+                <span id="remaining">481 ELO RESTANTES</span>
+            </div>
+
+            <div class="bar">
+                <div id="progressBar"></div>
+            </div>
+        </section>
+
+        <section class="stats">
+
+            <div>
+                <span>QUESTÕES</span>
+                <strong id="questions">10</strong>
+            </div>
+
+            <div>
+                <span>ACERTOS</span>
+                <strong id="correct">8</strong>
+            </div>
+
+            <div>
+                <span>PRECISÃO</span>
+                <strong id="accuracy">80%</strong>
+            </div>
+
+            <div>
+                <span>MAPAS</span>
+                <strong id="maps">1</strong>
+            </div>
+
+            <div>
+                <span>ELO TOTAL</span>
+                <strong id="totalElo">20</strong>
+            </div>
+
+        </section>
+
+        <!-- ELO PERFORMANCE CHART -->
+
+        <section class="chart-panel">
+
+            <div class="chart-header">
+                <div>
+                    <h2>ELO PERFORMANCE</h2>
+                    <p class="section-description">
+                        EVOLUÇÃO DO SEU ELO POR PARTIDA
+                    </p>
+                </div>
+
+                <div class="chart-current">
+                    <span>ELO ATUAL</span>
+                    <strong id="chartCurrentElo">20</strong>
+                </div>
+            </div>
+
+            <div class="chart-container" id="eloChartContainer">
+
+                <svg
+                    id="eloChart"
+                    viewBox="0 0 800 260"
+                    preserveAspectRatio="none"
+                    role="img"
+                    aria-label="Gráfico de evolução do Elo"
+                ></svg>
+
+                <div id="chartTooltip" class="chart-tooltip"></div>
+
+            </div>
+
+            <div class="chart-footer">
+                <span id="chartMatchCount">0 PARTIDAS REGISTRADAS</span>
+                <span>HISTÓRICO DE ELO</span>
+            </div>
+
+        </section>
+
+        <section class="map-panel">
+
+            <h2>MAP PERFORMANCE</h2>
+            <p class="section-description">
+                DESEMPENHO INDIVIDUAL POR MAPA
+            </p>
+
+            <div class="table-container">
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>MAPA</th>
+                            <th>PARTIDAS</th>
+                            <th>QUESTÕES</th>
+                            <th>ACERTOS</th>
+                            <th>PRECISÃO</th>
+                            <th>ELO</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="mapStats"></tbody>
+                </table>
+
+            </div>
+
+        </section>
+
+        <section class="match-panel">
+
+            <h2>REGISTRAR NOVA PARTIDA</h2>
+
+            <form id="matchForm">
+
+                <label for="subject">MAPA / MATÉRIA</label>
+
+                <select id="subject" required>
+                    <option value="Mirage">Mirage — RLM</option>
+                    <option value="Ancient">Ancient — Informática</option>
+                    <option value="Dust II">Dust II — Português</option>
+                    <option value="Nuke">Nuke — Conhecimentos Específicos</option>
+                    <option value="Cache">Cache — Conhecimentos Gerais</option>
+                </select>
+
+                <label for="totalQuestions">QUESTÕES RESPONDIDAS</label>
+                <input type="number" id="totalQuestions" min="1" step="1" required>
+
+                <label for="correctAnswers">ACERTOS</label>
+                <input type="number" id="correctAnswers" min="0" step="1" required>
+
+                <label for="performance">DESEMPENHO DA PARTIDA</label>
+
+                <select id="performance" required>
+                    <option value="10">Dentro da estimativa (+10 Elo)</option>
+                    <option value="20">Acima da estimativa (+20 Elo)</option>
+                    <option value="-10">Abaixo da estimativa (-10 Elo)</option>
+                </select>
+
+                <button type="submit">REGISTRAR PARTIDA</button>
+
+            </form>
+
+            <h2>HISTÓRICO DE PARTIDAS</h2>
+
+            <div id="matchHistory">
+                <p>Nenhuma nova partida registrada.</p>
+            </div>
+
+        </section>
+
+        <footer>
+            AGOSTIN666 COMPETITIVE PROFILE
+        </footer>
+
+    </main>
+
+    <script src="script.js"></script>
+
+</body>
+</html>
