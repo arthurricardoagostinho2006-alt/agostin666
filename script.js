@@ -1,6 +1,14 @@
 
 const STORAGE_KEY = "agostin666_profile";
 
+const SUPABASE_URL = "https://wjtgciidqzfcilxyofbb.supabase.co";
+const SUPABASE_KEY = "sb_publishable_K-TMCaeV-DdRlYPQGAlRlQ_q6au4Dlf";
+
+const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
+
 const defaultProfile = {
     nickname: "agostin666",
     avatar: "",
@@ -8,7 +16,6 @@ const defaultProfile = {
     questions: 10,
     correct: 8,
     maps: 1,
-
     mapStats: {
         "Mirage": {
             attempts: 1,
@@ -17,7 +24,6 @@ const defaultProfile = {
             elo: 20
         }
     },
-
     history: []
 };
 
@@ -29,6 +35,12 @@ const mapPool = [
     { name: "Cache", subject: "Conhecimentos Gerais" }
 ];
 
+let profile = loadProfile();
+let currentUser = null;
+let cloudReady = false;
+let syncTimer = null;
+
+// CARREGAR PERFIL LOCAL
 function loadProfile() {
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
@@ -46,20 +58,323 @@ function loadProfile() {
                 ...defaultProfile.mapStats,
                 ...(data.mapStats || {})
             },
-            history: Array.isArray(data.history) ? data.history : []
+            history: Array.isArray(data.history)
+                ? data.history
+                : []
         };
-    } catch {
+    } catch (error) {
+        console.error("Erro ao carregar perfil local:", error);
         return structuredClone(defaultProfile);
     }
 }
 
-let profile = loadProfile();
-
+// SALVAR LOCALMENTE E PROGRAMAR SINCRONIZAÇÃO
 function saveProfile() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    } catch {
-        alert("Não foi possível salvar os dados. Tente usar uma imagem menor.");
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(profile)
+        );
+    } catch (error) {
+        alert(
+            "Não foi possível salvar os dados. Tente usar uma imagem menor."
+        );
+        return;
+    }
+
+    if (cloudReady && currentUser) {
+        clearTimeout(syncTimer);
+
+        syncTimer = setTimeout(() => {
+            syncProfileToCloud();
+        }, 700);
+    }
+}
+
+// ENVIAR PERFIL PARA A NUVEM
+async function syncProfileToCloud() {
+    if (!cloudReady || !currentUser) return;
+
+    const message = document.getElementById("authMessage");
+
+    try {
+        const { error } = await supabaseClient
+            .from("player_profiles")
+            .upsert({
+                user_id: currentUser.id,
+                profile: profile,
+                updated_at: new Date().toISOString()
+            });
+
+        if (error) throw error;
+
+        if (message) {
+            message.textContent = "Perfil sincronizado com sucesso.";
+        }
+
+    } catch (error) {
+        console.error("Erro ao sincronizar:", error);
+
+        if (message) {
+            message.textContent =
+                "Erro ao sincronizar. Seus dados continuam salvos neste dispositivo.";
+        }
+    }
+}
+
+// ENVIAR PERFIL NO PRIMEIRO ACESSO
+async function syncProfileToCloudAfterLogin() {
+    const { error } = await supabaseClient
+        .from("player_profiles")
+        .upsert({
+            user_id: currentUser.id,
+            profile: profile,
+            updated_at: new Date().toISOString()
+        });
+
+    if (error) throw error;
+}
+
+// NORMALIZAR PERFIL RECEBIDO
+function normalizeProfile(data) {
+    return {
+        ...structuredClone(defaultProfile),
+        ...(data || {}),
+        mapStats: {
+            ...defaultProfile.mapStats,
+            ...((data && data.mapStats) || {})
+        },
+        history: Array.isArray(data?.history)
+            ? data.history
+            : []
+    };
+}
+
+// CARREGAR PERFIL DA NUVEM
+async function loadCloudProfile(user) {
+    const message = document.getElementById("authMessage");
+
+    cloudReady = false;
+    currentUser = user;
+
+    try {
+        const { data, error } = await supabaseClient
+            .from("player_profiles")
+            .select("profile")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data) {
+            message.textContent =
+                "Primeiro acesso. Enviando seu perfil para a nuvem...";
+
+            await syncProfileToCloudAfterLogin();
+
+        } else {
+            const useCloud = confirm(
+                "Encontramos um perfil salvo na nuvem.\n\n" +
+                "OK = usar o perfil da nuvem.\n" +
+                "Cancelar = manter o perfil deste dispositivo e enviá-lo para a nuvem."
+            );
+
+            if (useCloud) {
+                profile = normalizeProfile(data.profile);
+
+                localStorage.setItem(
+                    STORAGE_KEY,
+                    JSON.stringify(profile)
+                );
+
+                message.textContent =
+                    "Perfil da nuvem carregado com sucesso.";
+
+            } else {
+                message.textContent =
+                    "Mantendo o perfil deste dispositivo...";
+
+                await syncProfileToCloudAfterLogin();
+            }
+        }
+
+        cloudReady = true;
+
+        showApp(user);
+        updateProfile();
+        renderMapStats();
+        renderHistory();
+
+    } catch (error) {
+        console.error("Erro ao carregar perfil da nuvem:", error);
+
+        cloudReady = false;
+
+        message.textContent =
+            "Não foi possível carregar o perfil. Verifique sua conexão e tente entrar novamente.";
+    }
+}
+
+// MOSTRAR APLICATIVO
+function showApp(user) {
+    document.getElementById("authPanel").hidden = true;
+    document.getElementById("appContent").hidden = false;
+
+    document.getElementById("accountEmail").textContent =
+        user.email || "";
+}
+
+// MOSTRAR LOGIN
+function showLogin() {
+    cloudReady = false;
+    currentUser = null;
+
+    document.getElementById("authPanel").hidden = false;
+    document.getElementById("appContent").hidden = true;
+}
+
+// CADASTRAR CONTA
+document.getElementById("signupButton").addEventListener(
+    "click",
+    async function() {
+        const email =
+            document.getElementById("authEmail").value.trim();
+
+        const password =
+            document.getElementById("authPassword").value;
+
+        const message =
+            document.getElementById("authMessage");
+
+        if (!email || !password) {
+            message.textContent =
+                "Informe seu e-mail e sua senha.";
+            return;
+        }
+
+        if (password.length < 6) {
+            message.textContent =
+                "A senha precisa ter pelo menos 6 caracteres.";
+            return;
+        }
+
+        message.textContent = "Criando sua conta...";
+
+        try {
+            const { data, error } =
+                await supabaseClient.auth.signUp({
+                    email,
+                    password
+                });
+
+            if (error) throw error;
+
+            if (data.session && data.user) {
+                await loadCloudProfile(data.user);
+            } else {
+                message.textContent =
+                    "Conta criada! Confira seu e-mail para confirmar o cadastro. Depois, entre com sua conta.";
+            }
+
+        } catch (error) {
+            console.error(error);
+
+            message.textContent =
+                "Erro ao criar conta: " + error.message;
+        }
+    }
+);
+
+// ENTRAR NA CONTA
+document.getElementById("authForm").addEventListener(
+    "submit",
+    async function(event) {
+        event.preventDefault();
+
+        const email =
+            document.getElementById("authEmail").value.trim();
+
+        const password =
+            document.getElementById("authPassword").value;
+
+        const message =
+            document.getElementById("authMessage");
+
+        message.textContent = "Entrando na sua conta...";
+
+        try {
+            const { data, error } =
+                await supabaseClient.auth.signInWithPassword({
+                    email,
+                    password
+                });
+
+            if (error) throw error;
+
+            await loadCloudProfile(data.user);
+
+        } catch (error) {
+            console.error(error);
+
+            message.textContent =
+                "Não foi possível entrar: " + error.message;
+        }
+    }
+);
+
+// SAIR DA CONTA
+document.getElementById("logoutButton").addEventListener(
+    "click",
+    async function() {
+        const confirmed = confirm(
+            "Deseja realmente sair da sua conta?"
+        );
+
+        if (!confirmed) return;
+
+        cloudReady = false;
+        clearTimeout(syncTimer);
+
+        const { error } = await supabaseClient.auth.signOut();
+
+        if (error) {
+            alert("Erro ao sair: " + error.message);
+            return;
+        }
+
+        showLogin();
+
+        document.getElementById("authMessage").textContent =
+            "Você saiu da sua conta.";
+    }
+);
+
+// VERIFICAR SESSÃO EXISTENTE
+async function checkExistingSession() {
+    const message = document.getElementById("authMessage");
+
+    message.textContent = "Verificando sessão...";
+
+    try {
+        const { data, error } =
+            await supabaseClient.auth.getSession();
+
+        if (error) throw error;
+
+        if (data.session) {
+            await loadCloudProfile(data.session.user);
+        } else {
+            showLogin();
+
+            message.textContent =
+                "Entre ou crie sua conta para acessar seu perfil.";
+        }
+
+    } catch (error) {
+        console.error(error);
+
+        message.textContent =
+            "Não foi possível verificar sua sessão.";
     }
 }
 
@@ -81,7 +396,9 @@ const levels = [
 function updateProfile() {
     const elo = profile.elo;
 
-    document.getElementById("nickname").value = profile.nickname;
+    document.getElementById("nickname").value =
+        profile.nickname;
+
     document.getElementById("elo").textContent = elo;
     document.getElementById("totalElo").textContent = elo;
 
@@ -95,7 +412,9 @@ function updateProfile() {
         Object.keys(profile.mapStats).length;
 
     const accuracy = profile.questions > 0
-        ? Math.round((profile.correct / profile.questions) * 100)
+        ? Math.round(
+            (profile.correct / profile.questions) * 100
+        )
         : 0;
 
     document.getElementById("accuracy").textContent =
@@ -109,14 +428,19 @@ function updateProfile() {
         }
     }
 
-    const rankName = currentLevel.name.replace("LEVEL ", "RANK ");
+    const rankName =
+        currentLevel.name.replace("LEVEL ", "RANK ");
 
-    document.getElementById("rank").textContent = rankName;
+    document.getElementById("rank").textContent =
+        rankName;
 
     const levelIndex = levels.indexOf(currentLevel);
 
-    const rankEmblem = document.getElementById("rankEmblem");
-    const rankEmblemLevel = document.getElementById("rankEmblemLevel");
+    const rankEmblem =
+        document.getElementById("rankEmblem");
+
+    const rankEmblemLevel =
+        document.getElementById("rankEmblemLevel");
 
     rankEmblem.className =
         "rank-emblem rank-" + (levelIndex + 1);
@@ -131,16 +455,21 @@ function updateProfile() {
     );
 
     // PROGRESSO PARA O PRÓXIMO NÍVEL
-    const nextLevel = levels.find(level => level.min > elo);
+    const nextLevel = levels.find(
+        level => level.min > elo
+    );
 
     let progress = 100;
     let remaining = 0;
 
     if (nextLevel) {
-        const range = nextLevel.min - currentLevel.min;
+        const range =
+            nextLevel.min - currentLevel.min;
 
         remaining = nextLevel.min - elo;
-        progress = ((elo - currentLevel.min) / range) * 100;
+
+        progress =
+            ((elo - currentLevel.min) / range) * 100;
     }
 
     document.getElementById("progressBar").style.width =
@@ -150,10 +479,12 @@ function updateProfile() {
         remaining + " ELO RESTANTES";
 
     if (profile.avatar) {
-        document.getElementById("avatar").src = profile.avatar;
+        document.getElementById("avatar").src =
+            profile.avatar;
     }
 
-    document.title = profile.nickname + " | Player Profile";
+    document.title =
+        profile.nickname + " | Player Profile";
 
     renderEloChart();
 }
@@ -172,7 +503,8 @@ function renderEloChart() {
     const NS = "http://www.w3.org/2000/svg";
 
     function createSvgElement(tag, attributes = {}) {
-        const element = document.createElementNS(NS, tag);
+        const element =
+            document.createElementNS(NS, tag);
 
         Object.entries(attributes).forEach(([key, value]) => {
             element.setAttribute(key, value);
@@ -181,11 +513,15 @@ function renderEloChart() {
         return element;
     }
 
-    // PONTO INICIAL: ELO ATUAL DO PERFIL ANTES DAS NOVAS PARTIDAS
     const startingElo = profile.elo -
-        profile.history.reduce((sum, match) => sum + match.eloDelta, 0);
+        profile.history.reduce(
+            (sum, match) => sum + match.eloDelta,
+            0
+        );
 
-    const points = [{ elo: startingElo, initial: true }];
+    const points = [
+        { elo: startingElo, initial: true }
+    ];
 
     let runningElo = startingElo;
 
@@ -202,11 +538,16 @@ function renderEloChart() {
         });
     });
 
-    document.getElementById("chartCurrentElo").textContent = profile.elo;
+    document.getElementById("chartCurrentElo").textContent =
+        profile.elo;
 
     document.getElementById("chartMatchCount").textContent =
         profile.history.length +
-        (profile.history.length === 1 ? " PARTIDA REGISTRADA" : " PARTIDAS REGISTRADAS");
+        (
+            profile.history.length === 1
+                ? " PARTIDA REGISTRADA"
+                : " PARTIDAS REGISTRADAS"
+        );
 
     const width = 800;
     const height = 260;
@@ -229,7 +570,8 @@ function renderEloChart() {
         maxElo += 20;
     }
 
-    const padding = Math.max(20, (maxElo - minElo) * 0.2);
+    const padding =
+        Math.max(20, (maxElo - minElo) * 0.2);
 
     minElo = Math.max(0, minElo - padding);
     maxElo += padding;
@@ -239,12 +581,14 @@ function renderEloChart() {
             return left + chartWidth / 2;
         }
 
-        return left + (index / (points.length - 1)) * chartWidth;
+        return left +
+            (index / (points.length - 1)) * chartWidth;
     }
 
     function getY(elo) {
         return top +
-            ((maxElo - elo) / (maxElo - minElo)) * chartHeight;
+            ((maxElo - elo) / (maxElo - minElo)) *
+            chartHeight;
     }
 
     // LINHAS DE REFERÊNCIA
@@ -293,10 +637,13 @@ function renderEloChart() {
         )
         .join(" ");
 
-    // ÁREA PREENCHIDA ABAIXO DA LINHA
+    // ÁREA PREENCHIDA
     const areaPath = linePath +
-        " L " + coordinates[coordinates.length - 1].x + " " + (height - bottom) +
-        " L " + coordinates[0].x + " " + (height - bottom) +
+        " L " +
+        coordinates[coordinates.length - 1].x +
+        " " + (height - bottom) +
+        " L " + coordinates[0].x +
+        " " + (height - bottom) +
         " Z";
 
     const area = createSvgElement("path", {
@@ -331,35 +678,50 @@ function renderEloChart() {
             class: "elo-chart-point"
         });
 
-        circle.style.cursor = point.initial ? "default" : "pointer";
+        circle.style.cursor =
+            point.initial ? "default" : "pointer";
 
         if (!point.initial) {
             circle.addEventListener("mouseenter", () => {
                 tooltip.replaceChildren();
 
-                const mapTitle = document.createElement("strong");
+                const mapTitle =
+                    document.createElement("strong");
+
                 mapTitle.textContent = point.map;
 
-                const matchNumber = document.createElement("p");
+                const matchNumber =
+                    document.createElement("p");
+
                 matchNumber.textContent =
                     "PARTIDA #" + point.matchNumber;
 
-                const change = document.createElement("p");
-                change.className = point.eloDelta >= 0
-                    ? "chart-positive"
-                    : "chart-negative";
+                const change =
+                    document.createElement("p");
+
+                change.className =
+                    point.eloDelta >= 0
+                        ? "chart-positive"
+                        : "chart-negative";
 
                 change.textContent =
                     (point.eloDelta > 0 ? "+" : "") +
                     point.eloDelta + " ELO";
 
-                const total = document.createElement("strong");
+                const total =
+                    document.createElement("strong");
+
                 total.textContent = point.elo + " ELO";
 
-                const totalLabel = document.createElement("p");
-                totalLabel.textContent = "ELO APÓS A PARTIDA";
+                const totalLabel =
+                    document.createElement("p");
 
-                const date = document.createElement("p");
+                totalLabel.textContent =
+                    "ELO APÓS A PARTIDA";
+
+                const date =
+                    document.createElement("p");
+
                 date.textContent = point.date || "";
 
                 tooltip.append(
@@ -371,18 +733,24 @@ function renderEloChart() {
                     date
                 );
 
-                const rect = container.getBoundingClientRect();
+                const rect =
+                    container.getBoundingClientRect();
 
-                const xPosition = (coordinate.x / width) * rect.width;
-                const yPosition = (coordinate.y / height) * rect.height;
+                const xPosition =
+                    (coordinate.x / width) * rect.width;
+
+                const yPosition =
+                    (coordinate.y / height) * rect.height;
 
                 tooltip.style.display = "block";
+
                 tooltip.style.left = Math.min(
                     Math.max(xPosition, 75),
                     rect.width - 75
                 ) + "px";
 
-                tooltip.style.top = Math.max(yPosition - 10, 5) + "px";
+                tooltip.style.top =
+                    Math.max(yPosition - 10, 5) + "px";
             });
 
             circle.addEventListener("mouseleave", () => {
@@ -393,7 +761,7 @@ function renderEloChart() {
         svg.appendChild(circle);
     });
 
-    // RÓTULOS DO EIXO HORIZONTAL
+    // RÓTULOS
     const startLabel = createSvgElement("text", {
         x: left,
         y: height - 8,
@@ -432,7 +800,9 @@ function renderMapStats() {
         };
 
         const accuracy = stats.questions > 0
-            ? Math.round((stats.correct / stats.questions) * 100)
+            ? Math.round(
+                (stats.correct / stats.questions) * 100
+            )
             : 0;
 
         const row = document.createElement("tr");
@@ -448,6 +818,7 @@ function renderMapStats() {
 
         values.forEach((value, index) => {
             const cell = document.createElement("td");
+
             cell.textContent = value;
 
             if (index === 5 && stats.elo > 0) {
@@ -472,13 +843,17 @@ function renderHistory() {
 
     if (profile.history.length === 0) {
         const message = document.createElement("p");
-        message.textContent = "Nenhuma nova partida registrada.";
+
+        message.textContent =
+            "Nenhuma nova partida registrada.";
+
         historyContainer.appendChild(message);
         return;
     }
 
     [...profile.history].reverse().forEach(match => {
         const item = document.createElement("div");
+
         item.className = "match-item";
 
         const title = document.createElement("strong");
@@ -489,19 +864,22 @@ function renderHistory() {
             match.questions + " acertos";
 
         const details = document.createElement("p");
+
         details.textContent = match.date;
 
         const elo = document.createElement("p");
 
-        elo.className = match.eloDelta >= 0
-            ? "elo-positive"
-            : "elo-negative";
+        elo.className =
+            match.eloDelta >= 0
+                ? "elo-positive"
+                : "elo-negative";
 
         elo.textContent =
             (match.eloDelta > 0 ? "+" : "") +
             match.eloDelta + " ELO";
 
         item.append(title, details, elo);
+
         historyContainer.appendChild(item);
     });
 }
@@ -563,7 +941,8 @@ document.getElementById("matchForm").addEventListener(
     function(event) {
         event.preventDefault();
 
-        const map = document.getElementById("subject").value;
+        const map =
+            document.getElementById("subject").value;
 
         const questions = Number(
             document.getElementById("totalQuestions").value
@@ -584,12 +963,19 @@ document.getElementById("matchForm").addEventListener(
             correct < 0 ||
             correct > questions
         ) {
-            alert("Confira a quantidade de questões e de acertos.");
+            alert(
+                "Confira a quantidade de questões e de acertos."
+            );
             return;
         }
 
         const oldElo = profile.elo;
-        const newElo = Math.max(0, oldElo + selectedElo);
+
+        const newElo = Math.max(
+            0,
+            oldElo + selectedElo
+        );
+
         const appliedElo = newElo - oldElo;
 
         const match = {
@@ -636,6 +1022,7 @@ document.getElementById("nickname").addEventListener(
     "input",
     function() {
         profile.nickname = this.value;
+
         saveProfile();
 
         document.title =
@@ -662,16 +1049,24 @@ document.getElementById("photoInput").addEventListener(
             const image = new Image();
 
             image.onload = function() {
-                const canvas = document.createElement("canvas");
+                const canvas =
+                    document.createElement("canvas");
+
                 const maxSize = 512;
 
                 const scale = Math.min(
                     1,
-                    maxSize / Math.max(image.width, image.height)
+                    maxSize / Math.max(
+                        image.width,
+                        image.height
+                    )
                 );
 
-                canvas.width = Math.round(image.width * scale);
-                canvas.height = Math.round(image.height * scale);
+                canvas.width =
+                    Math.round(image.width * scale);
+
+                canvas.height =
+                    Math.round(image.height * scale);
 
                 const context = canvas.getContext("2d");
 
@@ -698,6 +1093,5 @@ document.getElementById("photoInput").addEventListener(
 );
 
 // INICIALIZAÇÃO
-updateProfile();
-renderMapStats();
-renderHistory();
+showLogin();
+checkExistingSession();
